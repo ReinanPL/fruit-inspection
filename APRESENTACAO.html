@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspeção de Frutas - Visão Computacional</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --accent-primary: #3b82f6;
+            --accent-secondary: #8b5cf6;
+            --accent-success: #10b981;
+            --accent-danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 20%);
+            color: var(--text-main);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Slide Container */
+        .slides-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            perspective: 1000px;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 4rem 6rem;
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(0.95) translateY(20px);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: scale(1) translateY(0);
+            z-index: 10;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 4.5rem;
+            font-weight: 800;
+            line-height: 1.1;
+            background: linear-gradient(135deg, #60a5fa 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        h2 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        h2::after {
+            content: '';
+            flex: 1;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-primary), transparent);
+            opacity: 0.5;
+        }
+
+        h3 {
+            font-size: 1.8rem;
+            color: var(--text-main);
+            margin-bottom: 1rem;
+        }
+
+        p,
+        li {
+            font-size: 1.4rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+
+        /* Components */
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            height: 100%;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .feature-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            padding: 1.5rem;
+            border-radius: 16px;
+            transition: transform 0.3s ease;
+        }
+
+        .feature-box:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--accent-primary);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .highlight-box {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 4px solid var(--accent-primary);
+            padding: 1.5rem;
+            border-radius: 0 12px 12px 0;
+            margin-top: 2rem;
+        }
+
+        /* Pipeline Flow */
+        .pipeline-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 3rem 0;
+            position: relative;
+        }
+
+        .pipeline-step {
+            text-align: center;
+            position: relative;
+            z-index: 2;
+            background: var(--bg-dark);
+            padding: 1rem;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            width: 160px;
+        }
+
+        .pipeline-step .icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .pipeline-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--glass-border);
+            z-index: 1;
+        }
+
+        /* Metrics */
+        .metric-big {
+            font-size: 5rem;
+            font-weight: 800;
+            color: var(--accent-success);
+            line-height: 1;
+        }
+
+        .metric-label {
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+        }
+
+        /* Navigation */
+        .nav-controls {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            display: flex;
+            gap: 1rem;
+            z-index: 100;
+        }
+
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent-primary);
+        }
+
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: var(--accent-primary);
+            width: 0%;
+            transition: width 0.3s;
+            z-index: 100;
+        }
+
+        .slide-number {
+            position: fixed;
+            bottom: 2rem;
+            left: 2rem;
+            color: var(--text-muted);
+            font-family: monospace;
+            font-size: 1.2rem;
+        }
+
+        /* Code block */
+        code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2em 0.4em;
+            border-radius: 4px;
+            font-family: monospace;
+            color: var(--accent-secondary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div class="slides-container">
+
+        <!-- SLIDE 1: INTRO -->
+        <div class="slide active">
+            <div style="text-align: center; max-width: 900px; margin: 0 auto;">
+                <div style="font-size: 6rem; margin-bottom: 1rem; animation: float 3s ease-in-out infinite;">🍎</div>
+                <h1>Sistema de Inspeção de Qualidade de Frutas</h1>
+                <p style="font-size: 1.8rem; color: var(--text-muted);">Visão Computacional Clássica & Machine Learning
+                </p>
+
+                <div style="margin-top: 4rem; display: flex; justify-content: center; gap: 3rem;">
+                    <div class="glass-card" style="padding: 1.5rem 3rem;">
+                        <span
+                            style="display: block; font-size: 2rem; color: var(--accent-primary); font-weight: bold;">265</span>
+                        <span style="font-size: 1rem; text-transform: uppercase;">Features</span>
+                    </div>
+                    <div class="glass-card" style="padding: 1.5rem 3rem;">
+                        <span
+                            style="display: block; font-size: 2rem; color: var(--accent-success); font-weight: bold;">SVM</span>
+                        <span style="font-size: 1rem; text-transform: uppercase;">Modelo</span>
+                    </div>
+                    <div class="glass-card" style="padding: 1.5rem 3rem;">
+                        <span
+                            style="display: block; font-size: 2rem; color: var(--accent-secondary); font-weight: bold;">~50ms</span>
+                        <span style="font-size: 1rem; text-transform: uppercase;">Tempo Real</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 4rem; opacity: 0.6;">
+                    <p>Reinan Amaral • Visão Computacional 2024</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 2: PROBLEMA & SOLUÇÃO -->
+        <div class="slide">
+            <h2>O Desafio</h2>
+            <div class="grid-2">
+                <div class="glass-card" style="border-left: 4px solid var(--accent-danger);">
+                    <h3 style="color: var(--accent-danger);">❌ Inspeção Manual</h3>
+                    <ul style="list-style: none;">
+                        <li>📉 <strong>Lenta e Ineficiente:</strong> Gargalo na produção</li>
+                        <li>💸 <strong>Alto Custo:</strong> Mão de obra intensiva</li>
+                        <li>🥱 <strong>Subjetiva:</strong> Erros por fadiga humana</li>
+                        <li>🚫 <strong>Não Escalável:</strong> Limite físico de inspeção</li>
+                    </ul>
+                </div>
+                <div class="glass-card" style="border-left: 4px solid var(--accent-success);">
+                    <h3 style="color: var(--accent-success);">✅ Nossa Solução</h3>
+                    <ul style="list-style: none;">
+                        <li>⚡ <strong>Alta Velocidade:</strong> Processamento em milissegundos</li>
+                        <li>🎯 <strong>Consistência:</strong> Critérios objetivos e repetíveis</li>
+                        <li>🧠 <strong>Explainable AI:</strong> Sem "caixa preta" (Deep Learning)</li>
+                        <li>📈 <strong>Escalável:</strong> Funciona 24/7 sem fadiga</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 3: PIPELINE -->
+        <div class="slide">
+            <h2>Arquitetura do Pipeline</h2>
+            <div class="glass-card" style="margin-top: 2rem;">
+                <div class="pipeline-container">
+                    <div class="pipeline-line"></div>
+
+                    <div class="pipeline-step">
+                        <span class="icon">📸</span>
+                        <h4>Input</h4>
+                        <small>RGB 256px</small>
+                    </div>
+
+                    <div class="pipeline-step">
+                        <span class="icon">🎨</span>
+                        <h4>Cor</h4>
+                        <small>HSV + Hist</small>
+                    </div>
+
+                    <div class="pipeline-step">
+                        <span class="icon">🧶</span>
+                        <h4>Textura</h4>
+                        <small>LBP + GLCM</small>
+                    </div>
+
+                    <div class="pipeline-step">
+                        <span class="icon">📐</span>
+                        <h4>Forma</h4>
+                        <small>Bordas</small>
+                    </div>
+
+                    <div class="pipeline-step">
+                        <span class="icon">🤖</span>
+                        <h4>SVM</h4>
+                        <small>RBF Kernel</small>
+                    </div>
+
+                    <div class="pipeline-step" style="border-color: var(--accent-success);">
+                        <span class="icon">✅</span>
+                        <h4>Output</h4>
+                        <small>Fresca/Podre</small>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 2rem;">
+                    <p style="font-size: 1.2rem;">Total de <strong>265 Features</strong> extraídas e normalizadas</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 4: FEATURES DE COR -->
+        <div class="slide">
+            <h2>🎨 Módulo 1: Análise de Cor</h2>
+            <div class="grid-2">
+                <div>
+                    <div class="feature-box">
+                        <span class="feature-icon">📊</span>
+                        <h3>Histogramas (192 features)</h3>
+                        <p>Análise estatística da distribuição de cores.</p>
+                        <ul>
+                            <li><strong>RGB:</strong> Intensidade bruta</li>
+                            <li><strong>HSV:</strong> Separação de cor e brilho</li>
+                        </ul>
+                    </div>
+                    <div class="feature-box" style="margin-top: 1.5rem;">
+                        <span class="feature-icon">📈</span>
+                        <h3>Estatísticas (12 features)</h3>
+                        <p>Média e Desvio Padrão de cada canal.</p>
+                    </div>
+                </div>
+                <div>
+                    <div class="glass-card">
+                        <h3>Por que HSV?</h3>
+                        <p>O espaço de cor <strong>HSV</strong> (Hue, Saturation, Value) é crucial:</p>
+                        <div style="margin-top: 1.5rem;">
+                            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                                <div style="width: 40px; height: 40px; background: red; border-radius: 50%;"></div>
+                                <div>
+                                    <strong>Fruta Fresca</strong>
+                                    <div style="font-size: 0.9rem; opacity: 0.7;">Alta Saturação (S)</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <div style="width: 40px; height: 40px; background: #8B4513; border-radius: 50%;"></div>
+                                <div>
+                                    <strong>Fruta Podre</strong>
+                                    <div style="font-size: 0.9rem; opacity: 0.7;">Baixa Saturação + Mudança de Matiz
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 5: FEATURES DE TEXTURA -->
+        <div class="slide">
+            <h2>🧶 Módulo 2: Textura (LBP)</h2>
+            <div class="grid-2">
+                <div class="glass-card">
+                    <h3>Local Binary Pattern (LBP)</h3>
+                    <p>Transforma a textura da imagem em um código binário robusto.</p>
+                    <div
+                        style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; font-family: monospace; margin: 1rem 0;">
+                        1. Compara pixel com vizinhos<br>
+                        2. Mais claro = 1, Mais escuro = 0<br>
+                        3. Gera código: 11001011
+                    </div>
+                    <p><strong>Resultado:</strong> Histograma de padrões de textura.</p>
+                </div>
+                <div>
+                    <div class="feature-box">
+                        <span class="feature-icon">✨</span>
+                        <h3>Superfície Lisa (Fresca)</h3>
+                        <p>Pouca variação nos padrões LBP. Alta homogeneidade na GLCM.</p>
+                    </div>
+                    <div class="feature-box" style="margin-top: 1.5rem;">
+                        <span class="feature-icon">🦠</span>
+                        <h3>Superfície Rugosa (Podre)</h3>
+                        <p>Muitos padrões variados. Alto contraste e entropia.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 6: FEATURES DE FORMA -->
+        <div class="slide">
+            <h2>📐 Módulo 3: Forma e Defeitos</h2>
+            <div class="grid-3">
+                <div class="feature-box">
+                    <span class="feature-icon">🔪</span>
+                    <h3>Bordas (Canny)</h3>
+                    <p>Detecta contornos. Frutas podres tendem a ter mais bordas internas (rachaduras).</p>
+                </div>
+                <div class="feature-box">
+                    <span class="feature-icon">🌑</span>
+                    <h3>Regiões Escuras</h3>
+                    <p>Thresholding para identificar manchas pretas características de apodrecimento.</p>
+                </div>
+                <div class="feature-box">
+                    <span class="feature-icon">📉</span>
+                    <h3>Gradiente</h3>
+                    <p>Filtro Sobel para medir a taxa de variação da intensidade da imagem.</p>
+                </div>
+            </div>
+            <div class="highlight-box">
+                <strong>Concatenação Final:</strong> 204 (Cor) + 54 (Textura) + 7 (Forma) = <strong>265
+                    Features</strong>
+            </div>
+        </div>
+
+        <!-- SLIDE 7: O MODELO SVM -->
+        <div class="slide">
+            <h2>🧠 O Cérebro: SVM</h2>
+            <div class="grid-2">
+                <div>
+                    <p style="font-size: 1.6rem;"><strong>Support Vector Machine</strong></p>
+                    <p>Um classificador poderoso que encontra o melhor <em>hiperplano</em> para separar as classes.</p>
+
+                    <div style="margin-top: 2rem;">
+                        <div class="feature-box" style="border-color: var(--accent-primary);">
+                            <strong>Kernel RBF (Radial Basis Function)</strong>
+                            <p>Permite separar dados que não seguem uma linha reta, criando fronteiras de decisão curvas
+                                e complexas.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card"
+                    style="display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                    <div
+                        style="width: 200px; height: 200px; border: 2px dashed rgba(255,255,255,0.3); border-radius: 50%; position: relative; display: flex; align-items: center; justify-content: center;">
+                        <div
+                            style="position: absolute; width: 100%; height: 2px; background: var(--accent-primary); transform: rotate(45deg);">
+                        </div>
+                        <span style="position: absolute; top: 40px; left: 40px;">🍏</span>
+                        <span style="position: absolute; bottom: 40px; right: 40px;">🍎</span>
+                    </div>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;">Representação Abstrata do Hiperplano
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 8: RESULTADOS -->
+        <div class="slide">
+            <h2>📊 Resultados Obtidos</h2>
+            <div class="grid-2">
+                <div class="glass-card">
+                    <div style="display: flex; justify-content: space-around; text-align: center;">
+                        <div>
+                            <div class="metric-big">93%</div>
+                            <div class="metric-label">Acurácia</div>
+                        </div>
+                        <div>
+                            <div class="metric-big">92%</div>
+                            <div class="metric-label">F1-Score</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 2rem; text-align: center;">
+                        <p>Performance robusta com apenas features clássicas.</p>
+                    </div>
+                </div>
+                <div>
+                    <h3>Matriz de Confusão</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                        <div class="feature-box"
+                            style="background: rgba(16, 185, 129, 0.2); border-color: var(--accent-success);">
+                            <strong>Verdadeiros Positivos</strong>
+                            <p>Alta taxa de acerto em frutas frescas.</p>
+                        </div>
+                        <div class="feature-box"
+                            style="background: rgba(239, 68, 68, 0.2); border-color: var(--accent-danger);">
+                            <strong>Falsos Negativos</strong>
+                            <p>Baixa taxa de erro crítico (fruta podre classificada como fresca).</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLIDE 9: CONCLUSÃO -->
+        <div class="slide">
+            <h2>🚀 Conclusão</h2>
+            <div class="glass-card">
+                <ul style="font-size: 1.6rem; list-style: none;">
+                    <li style="margin-bottom: 1.5rem;">✅ <strong>Objetivo Atingido:</strong> Sistema funcional sem Deep
+                        Learning.</li>
+                    <li style="margin-bottom: 1.5rem;">🔍 <strong>Interpretabilidade:</strong> Sabemos exatamente
+                        <em>por que</em> a fruta foi classificada.</li>
+                    <li style="margin-bottom: 1.5rem;">⚡ <strong>Eficiência:</strong> Leve o suficiente para rodar em
+                        hardware modesto (Raspberry Pi).</li>
+                    <li>🔮 <strong>Futuro:</strong> Segmentação semântica e implementação em esteira real.</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin-top: 3rem;">
+                <h3>Obrigado! Perguntas?</h3>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Navigation UI -->
+    <div class="slide-number" id="slideNumber">1 / 9</div>
+    <div class="nav-controls">
+        <button class="nav-btn" onclick="prevSlide()">←</button>
+        <button class="nav-btn" onclick="nextSlide()">→</button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const progressBar = document.getElementById('progressBar');
+        const slideNumber = document.getElementById('slideNumber');
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                }
+            });
+
+            // Update progress bar
+            const progress = ((currentSlide + 1) / slides.length) * 100;
+            progressBar.style.width = `${progress}%`;
+
+            // Update slide number
+            slideNumber.textContent = `${currentSlide + 1} / ${slides.length}`;
+        }
+
+        function nextSlide() {
+            if (currentSlide < slides.length - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'Space') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                prevSlide();
+            }
+        });
+
+        // Initialize
+        updateSlide();
+    </script>
+</body>
+
+</html>

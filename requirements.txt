@@ -1,0 +1,31 @@
+# ============================================================================
+# Sistema de Inspeção de Qualidade de Frutas
+# Dependências Python
+# ============================================================================
+
+# Core
+numpy>=1.21.0
+pandas>=1.3.0
+
+# Computer Vision
+opencv-python>=4.5.0
+scikit-image>=0.18.0
+Pillow>=8.0.0
+
+# Machine Learning
+scikit-learn>=1.0.0
+imbalanced-learn>=0.8.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# Progress bars
+tqdm>=4.62.0
+
+# Configuration
+pyyaml>=5.4.0
+
+# Jupyter (opcional, para notebooks)
+jupyter>=1.0.0
+ipywidgets>=7.6.0
