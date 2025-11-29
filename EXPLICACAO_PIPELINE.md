@@ -19,22 +19,25 @@ graph TD
     A[Imagem Original RGB] --> B[Módulo 1: Features de Cor]
     A --> C[Módulo 2: Features de Textura]
     A --> D[Módulo 3: Features de Forma]
+    A --> E[Módulo 4: Features de Defeitos]
     
-    B --> E[204 features de cor]
-    C --> F[54 features de textura]
-    D --> G[7 features de forma]
+    B --> F[204 features de cor]
+    C --> G[54 features de textura]
+    D --> H[7 features de forma]
+    E --> I[6 features de defeitos]
     
-    E --> H[Vetor de 265 features]
-    F --> H
-    G --> H
+    F --> J[Vetor de 271 features]
+    G --> J
+    H --> J
+    I --> J
     
-    H --> I[Normalização StandardScaler]
-    I --> J[Classificador SVM]
-    J --> K[Predição: Fresca ou Podre]
+    J --> K[Normalização StandardScaler]
+    K --> L[Classificador SVM]
+    L --> M[Predição: Fresca ou Podre]
     
     style A fill:#e1f5ff
-    style H fill:#fff3cd
-    style K fill:#d4edda
+    style J fill:#fff3cd
+    style M fill:#d4edda
 ```
 
 ---
@@ -130,7 +133,7 @@ Exemplo:
 
 ---
 
-## 📐 MÓDULO 3: Extração de Features de FORMA e DEFEITOS (7 features)
+## 📐 MÓDULO 3: Extração de Features de FORMA (7 features)
 
 ### **Etapa 3.1: Detecção de Bordas (Canny)**
 - **O que faz:** Detecta bordas e contornos na imagem
@@ -140,18 +143,7 @@ Exemplo:
   - **Edge density alto:** Muitas bordas = superfície irregular (possível defeito)
   - **Edge density baixo:** Superfície lisa
 
-### **Etapa 3.2: Detecção de Regiões Escuras**
-- **O que faz:** Identifica áreas muito escuras (threshold < 60)
-- **Métrica:** Percentual de pixels escuros
-- **Interpretação:** Manchas escuras geralmente indicam apodrecimento
-
-### **Etapa 3.3: Threshold Adaptativo**
-- **O que é:** Binarização que se adapta localmente às condições de iluminação
-- **Como:** Compara cada pixel com a média da vizinhança
-- **Métrica:** Defect score (1 - proporção de pixels brancos)
-- **Uso:** Detecta irregularidades e manchas mesmo com iluminação não uniforme
-
-### **Etapa 3.4: Análise de Gradiente (Sobel)**
+### **Etapa 3.2: Análise de Gradiente (Sobel)**
 - **O que faz:** Calcula a taxa de variação de intensidade (quão rápido a cor muda)
 - **Como:** 
   1. Aplica filtro Sobel em X (horizontal)
@@ -162,22 +154,53 @@ Exemplo:
   - **Gradiente alto:** Bordas acentuadas, superfície irregular
   - **Gradiente baixo:** Transições suaves, superfície uniforme
 
-### **Etapa 3.5: Estatísticas de Bordas**
+### **Etapa 3.3: Estatísticas de Bordas**
 - Média e desvio padrão da imagem de bordas (Canny)
 
 ### ✅ **Total do Módulo 3: 7 features**
 
 ---
 
+## 🦠 MÓDULO 4: Extração de Features de DEFEITOS (6 features)
+
+### **Etapa 4.1: Detecção de Regiões Escuras**
+- **O que faz:** Identifica áreas muito escuras (threshold < 60)
+- **Métrica:** Percentual de pixels escuros
+- **Interpretação:** Manchas escuras geralmente indicam apodrecimento
+
+### **Etapa 4.2: Threshold Adaptativo**
+- **O que é:** Binarização que se adapta localmente às condições de iluminação
+- **Como:** Compara cada pixel com a média da vizinhança
+- **Métrica:** Defect score (1 - proporção de pixels brancos)
+- **Uso:** Detecta irregularidades e manchas mesmo com iluminação não uniforme
+
+### **Etapa 4.3: Detecção de Manchas Circulares (Hough)**
+- **O que faz:** Usa Transformada de Hough para achar círculos
+- **Métrica:** Contagem de círculos detectados
+- **Uso:** Muitos fungos começam como manchas circulares
+
+### **Etapa 4.4: Simetria**
+- **O que faz:** Compara a metade esquerda com a direita (espelhada)
+- **Métrica:** Score de simetria (SSIM)
+- **Uso:** Frutas frescas tendem a ser simétricas; podres/deformadas não
+
+### **Etapa 4.5: Regiões Conectadas**
+- **O que faz:** Conta quantas "ilhas" de manchas existem
+- **Métrica:** Número de componentes conectados
+
+### ✅ **Total do Módulo 4: 6 features**
+
+---
+
 ## 🔗 CONCATENAÇÃO E NORMALIZAÇÃO
 
-### **Etapa 4: Concatenação do Vetor de Features**
+### **Etapa 5: Concatenação do Vetor de Features**
 ```
-[204 features de cor] + [54 features de textura] + [7 features de forma]
-= 265 features totais
+[204 features de cor] + [54 features de textura] + [7 features de forma] + [6 features de defeitos]
+= 271 features totais
 ```
 
-### **Etapa 5: Normalização (StandardScaler)**
+### **Etapa 6: Normalização (StandardScaler)**
 - **O que faz:** Padroniza todas as features para terem média 0 e desvio padrão 1
 - **Por quê:** Features têm escalas muito diferentes (ex: média RGB pode ser 0-255, edge density é 0-1)
 - **Fórmula:** `z = (x - média) / desvio_padrão`
@@ -192,7 +215,7 @@ Exemplo:
 #### **SVM (Support Vector Machine)**
 - **O que é:** Um algoritmo que encontra a melhor "linha" (hiperplano) para separar as frutas frescas das podres.
 - **Por que SVM?**
-  - Funciona muito bem com vetores de características (como nosso vetor de 265 features).
+  - Funciona muito bem com vetores de características (como nosso vetor de 271 features).
   - É robusto e eficaz para classificação binária.
   - Usamos o **Kernel RBF** (Radial Basis Function), que permite separar classes que não são linearmente separáveis (ou seja, quando uma linha reta não basta).
 
@@ -214,7 +237,7 @@ Exemplo:
 - Regiões escuras
 - Threshold adaptativo
 - Gradiente
-- Histogramas RGB e HSV
+- Histogramas RGB e HSV (internos)
 
 ### **2. Resultados da Classificação**
 - Top 5 predições com probabilidades
@@ -234,8 +257,9 @@ Exemplo:
 2. **Extração paralela:**
    - COR: histogramas RGB + HSV + estatísticas → 204 features
    - TEXTURA: LBP + GLCM + estatísticas → 54 features
-   - FORMA: bordas + defeitos + gradientes → 7 features
-3. **Concatenação:** vetor de 265 features
+   - FORMA: bordas + gradientes → 7 features
+   - DEFEITOS: manchas + simetria + regiões escuras → 6 features
+3. **Concatenação:** vetor de 271 features
 4. **Normalização:** StandardScaler
 5. **Classificação:** SVM
 6. **Output:** Classe + confiança
@@ -245,7 +269,7 @@ Exemplo:
 ## ✅ PONTOS FORTES DO CÓDIGO
 
 - ✅ Pipeline bem estruturado e modular
-- ✅ Combinação robusta de features (cor, textura, forma)
+- ✅ Combinação robusta de features (cor, textura, forma, defeitos)
 - ✅ Visualizações detalhadas para apresentação
 - ✅ Modelo SVM robusto e bem calibrado
 - ✅ Normalização adequada dos dados
@@ -259,22 +283,17 @@ Exemplo:
 - Adicionar Gabor Filters (detecta padrões direcionais)
 - Wavelets (análise multi-escala)
 
-### **3. Features Específicas de Defeitos**
-- Detecção de manchas circulares (Hough Circles)
-- Análise de simetria (frutas podres perdem simetria)
-- Contagem de regiões conectadas (número de manchas)
-
-### **4. Melhorar Visualizações**
+### **2. Melhorar Visualizações**
 - Adicionar setas mostrando o fluxo entre etapas
 - Destacar regiões de defeito na imagem original
 - Criar GIF animado do pipeline
 
-### **5. Data Augmentation**
+### **3. Data Augmentation**
 - Rotação, flip, zoom
 - Ajuste de brilho/contraste
 - Melhora generalização do modelo
 
-### **6. Cross-Validation**
+### **4. Cross-Validation**
 - Usar K-Fold para avaliação mais robusta
 - Evitar overfitting em uma única divisão treino/teste
 

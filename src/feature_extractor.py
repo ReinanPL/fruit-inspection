@@ -23,7 +23,15 @@ Features Extraídas:
    - Score de defeitos
    - Gradientes
 
-Total: 265 features por imagem
+4. DEFEITOS (6 features):
+   - Manchas circulares
+   - Área de defeitos
+   - Simetria
+   - Uniformidade de saturação
+   - Variação local de cor
+   - Regiões escuras conectadas
+
+Total: 271 features por imagem
 """
 
 import numpy as np
@@ -311,6 +319,79 @@ class FeatureExtractor:
         ])
         
         return shape_features
+
+    def extract_defect_features(self, image):
+        """
+        Extrai features específicas para detecção de defeitos.
+        """
+        img = cv2.resize(image, self.img_size)
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+        
+        # 1. Detecção de manchas circulares (Hough Circles)
+        # Frutas podres têm manchas escuras circulares
+        circles = cv2.HoughCircles(
+            gray, 
+            cv2.HOUGH_GRADIENT, 
+            dp=1, 
+            minDist=20,
+            param1=50, 
+            param2=30, 
+            minRadius=5, 
+            maxRadius=50
+        )
+        num_spots = len(circles[0]) if circles is not None else 0
+        
+        # 2. Área de defeitos (threshold adaptativo)
+        adaptive = cv2.adaptiveThreshold(
+            gray, 255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
+        defect_area_ratio = 1 - (np.sum(adaptive > 0) / adaptive.size)
+        
+        # 3. Análise de simetria (comparar metades esquerda/direita)
+        h, w = gray.shape
+        left_half = gray[:, :w//2]
+        right_half = cv2.flip(gray[:, w//2:], 1)  # Espelhar
+        
+        # Redimensionar para mesmo tamanho
+        if left_half.shape != right_half.shape:
+            right_half = cv2.resize(right_half, (left_half.shape[1], left_half.shape[0]))
+        
+        # Diferença absoluta entre metades
+        symmetry_score = 1 - (np.mean(np.abs(left_half.astype(float) - right_half.astype(float))) / 255)
+        
+        # 4. Uniformidade de cor (desvio padrão de saturação)
+        saturation_std = np.std(hsv[:,:,1])
+        saturation_uniformity = 1 / (1 + saturation_std / 100)  # Normalizar
+        
+        # 5. Variação local de cor (detecta manchas)
+        # Calcular variância em janelas 16x16 usando convolução
+        kernel_size = 16
+        kernel = np.ones((kernel_size, kernel_size), dtype=np.float32) / (kernel_size ** 2)
+        sat_channel = hsv[:,:,1].astype(np.float32)
+        local_mean = cv2.filter2D(sat_channel, -1, kernel)
+        local_sq_mean = cv2.filter2D(sat_channel**2, -1, kernel)
+        local_variance = local_sq_mean - local_mean**2
+        avg_local_variance = np.mean(local_variance)
+        
+        # 6. Contagem de regiões conectadas escuras
+        _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        num_dark_regions = num_labels - 1  # Subtrair o fundo
+        
+        # Vetor de features de defeitos (6 features)
+        defect_features = np.array([
+            num_spots,              # Quantidade de manchas circulares
+            defect_area_ratio,      # Proporção de área com defeitos
+            symmetry_score,         # Simetria (frutas podres perdem simetria)
+            saturation_uniformity,  # Uniformidade de saturação
+            avg_local_variance,     # Variação local de cor
+            num_dark_regions        # Número de regiões escuras
+        ])
+        
+        return defect_features
     
     def extract_all_features(self, image):
         """
@@ -324,17 +405,19 @@ class FeatureExtractor:
         Retorna
         -------
         numpy.ndarray
-            Array com 265 features:
+            Array com 271 features:
             - 204 features de cor
             - 54 features de textura
             - 7 features de forma
+            - 6 features de defeitos
         """
         color_feat = self.extract_color_features(image)      # 204 features
         texture_feat = self.extract_texture_features(image)  # 54 features
         shape_feat = self.extract_shape_features(image)      # 7 features
+        defect_feat = self.extract_defect_features(image)    # 6 features
         
-        # Total: 265 features
-        all_features = np.concatenate([color_feat, texture_feat, shape_feat])
+        # Total: 271 features
+        all_features = np.concatenate([color_feat, texture_feat, shape_feat, defect_feat])
         
         return all_features
     

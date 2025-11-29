@@ -35,9 +35,8 @@
 #### O que falar:
 > "A arquitetura do pipeline é dividida em 5 etapas principais:"
 > 1. "Entrada: Imagem RGB da fruta (256×256 pixels)"
-> 2. "**Extração de features em 3 módulos paralelos**: cor, textura e forma"
-> 3. "Concatenação em um vetor de 265 características"
-> 4. "Normalização dos dados"
+> 2. "**Extração de features em 4 módulos paralelos**: cor, textura, forma e defeitos"
+> 3. "Concatenação em um vetor de 271 características"
 > 4. "Normalização dos dados"
 > 5. "Classificação usando SVM"
 
@@ -45,7 +44,31 @@
 
 ---
 
-### **SLIDE 3: Módulo 1 - Features de COR** (3 minutos) ⭐
+### **SLIDE 3: Módulo 0 - Pré-processamento** (2 minutos) ⭐ [NOVO]
+
+#### O que mostrar:
+[Visualizações: imagem original, redimensionada, blur, CLAHE, segmentada]
+
+#### O que falar:
+
+**Parte 1: Padronização**
+> "Antes de extrair qualquer característica, precisamos padronizar as imagens."
+> "Todas as imagens são redimensionadas para **256x256 pixels** para garantir consistência."
+
+**Parte 2: Remoção de Ruído**
+> "Aplicamos um **Gaussian Blur** (suavização) para remover ruídos de alta frequência que poderiam atrapalhar a detecção de bordas."
+
+**Parte 3: Realce de Contraste (CLAHE)**
+> "Usamos o **CLAHE** (Contrast Limited Adaptive Histogram Equalization) no canal de luminosidade (Lab)."
+> "Isso melhora o contraste localmente, realçando detalhes da textura da casca sem estourar o brilho."
+
+**Parte 4: Segmentação de Fundo**
+> "Para analisar apenas a fruta e não o fundo, fazemos uma segmentação."
+> "Usamos threshold no canal de Saturação (HSV) e operações morfológicas para criar uma máscara e isolar a fruta."
+
+---
+
+### **SLIDE 4: Módulo 1 - Features de COR** (3 minutos) ⭐
 
 #### O que mostrar:
 [Usar as visualizações do código: imagem original, canais H/S/V, histogramas RGB e HSV]
@@ -81,7 +104,7 @@
 
 ---
 
-### **SLIDE 4: Módulo 2 - Features de TEXTURA** (3 minutos) ⭐
+### **SLIDE 5: Módulo 2 - Features de TEXTURA** (3 minutos) ⭐
 
 #### O que mostrar:
 [Visualizações: escala de cinza, LBP, GLCM]
@@ -126,7 +149,7 @@
 
 ---
 
-### **SLIDE 5: Módulo 3 - Features de FORMA e DEFEITOS** (2 minutos)
+### **SLIDE 6: Módulo 3 - Features de FORMA** (2 minutos)
 
 #### O que mostrar:
 [Visualizações: bordas (Canny), regiões escuras, threshold adaptativo, gradiente]
@@ -164,25 +187,57 @@
 > "Calculamos a média e desvio padrão do gradiente."
 
 #### Total do Módulo 3:
-> "Extraímos **7 features de forma e defeitos**: densidade de bordas, percentual de regiões escuras, defect score, estatísticas de gradiente e bordas."
+> "Extraímos **7 features de forma**: densidade de bordas, percentual de regiões escuras, defect score, estatísticas de gradiente e bordas."
 
 ---
 
-### **SLIDE 6: Concatenação e Normalização** (1 minuto)
+### **SLIDE 7: Módulo 4 - Features de DEFEITOS** (2 minutos) ⭐ [NOVO]
+
+#### O que mostrar:
+[Visualizações: manchas circulares (Hough), simetria, variância local]
+
+#### O que falar:
+
+**Parte 1: Manchas Circulares (Hough Circles)**
+> "Este é um módulo novo e específico. Usamos a **Transformada de Hough** para detectar círculos."
+
+> "Muitos fungos e podridões começam como **manchas circulares**. Contamos quantas manchas existem na fruta."
+
+**Parte 2: Simetria**
+> "Calculamos a simetria da fruta comparando a metade esquerda com a direita (espelhada)."
+
+> "Frutas frescas geralmente são simétricas. Frutas com defeitos graves ou deformações perdem essa simetria."
+
+**Parte 3: Uniformidade de Saturação**
+> "Analisamos se a saturação da cor é uniforme em toda a fruta."
+
+> "Manchas de podridão geralmente têm saturação diferente do resto da casca, diminuindo a uniformidade."
+
+**Parte 4: Regiões Conectadas**
+> "Contamos quantas regiões escuras desconectadas existem. Várias manchas espalhadas indicam estado avançado de deterioração."
+
+#### Total do Módulo 4:
+> "Extraímos **6 features específicas de defeitos**: contagem de manchas, simetria, uniformidade de saturação, variância local, área de defeito e regiões conectadas."
+
+---
+
+### **SLIDE 8: Concatenação e Normalização** (1 minuto)
 
 #### O que falar:
 > "Agora temos:"
 > - "**204 features de cor**"
 > - "**54 features de textura**"
 > - "**7 features de forma**"
+> - "**6 features de defeitos**"
 
-> "Concatenamos tudo em um **vetor de 265 features**."
+> "Concatenamos tudo em um **vetor de 271 features**."
 
 > "Mas há um problema: as features têm escalas muito diferentes. Por exemplo:"
 > - "Média RGB pode ser 0-255"
 > - "Edge density é 0-1"
+> - "Contagem de manchas pode ser 0-10"
 
-> "Se não normalizarmos, o modelo de ML vai dar mais peso- Distribuição de confiança maiores."
+> "Se não normalizarmos, o modelo de ML vai dar mais peso para features com valores maiores."
 
 > "Por isso, aplicamos o **StandardScaler**, que normaliza cada feature para ter média 0 e desvio padrão 1."
 
@@ -192,14 +247,14 @@
 
 ---
 
-### **SLIDE 7: Classificação com SVM** (2 minutos) ⭐
+### **SLIDE 9: Classificação com SVM** (2 minutos) ⭐
 
 #### O que falar:
-> "Com o vetor de 265 features normalizado, usamos o **SVM (Support Vector Machine)** para classificar."
+> "Com o vetor de 271 features normalizado, usamos o **SVM (Support Vector Machine)** para classificar."
 
 > "Por que SVM? Ele é excelente para encontrar a melhor separação entre duas classes (fresca vs podre)."
 
-> "Imaginem que cada fruta é um ponto em um espaço de 265 dimensões. O SVM tenta encontrar uma 'fronteira' (hiperplano) que deixa as frutas frescas de um lado e as podres do outro."
+> "Imaginem que cada fruta é um ponto em um espaço de 271 dimensões. O SVM tenta encontrar uma 'fronteira' (hiperplano) que deixa as frutas frescas de um lado e as podres do outro."
 
 > "Usamos o **Kernel RBF**, que permite criar fronteiras curvas e complexas, já que na vida real a separação nem sempre é uma linha reta perfeita."
 
@@ -207,7 +262,7 @@
 
 ---
 
-### **SLIDE 8: Resultados** (2 minutos)
+### **SLIDE 10: Resultados** (2 minutos)
 
 #### O que mostrar:
 [Matriz de confusão, gráficos de precisão/recall/F1, distribuição de confiança]
@@ -237,7 +292,7 @@
 
 ---
 
-### **SLIDE 9: Demonstração Prática** (1 minuto)
+### **SLIDE 11: Demonstração Prática** (1 minuto)
 
 #### O que mostrar:
 [Executar `inspector.predict_image()` em uma imagem de exemplo]
@@ -249,7 +304,7 @@
 
 > "Aqui vemos:"
 > 1. "A imagem original"
-> 2. "A extração de features passo a passo (canais HSV, LBP, bordas, etc.)"
+> 2. "A extração de features passo a passo (canais HSV, LBP, bordas, defeitos, etc.)"
 > 3. "O top 5 de predições com probabilidades"
 > 4. "A decisão final: **[FRESCA/PODRE]** com **XX% de confiança**"
 
@@ -257,16 +312,16 @@
 
 ---
 
-### **SLIDE 10: Conclusões e Trabalhos Futuros** (1 minuto)
+### **SLIDE 12: Conclusões e Trabalhos Futuros** (1 minuto)
 
 #### O que falar:
 
 **Conclusões:**
 > "Desenvolvemos um sistema funcional de inspeção de frutas usando **apenas técnicas clássicas de visão computacional**."
 
-> "O diferencial é a **interpretabilidade**: sabemos exatamente quais características o modelo usa para decidir (cor, textura, forma)."
+> "O diferencial é a **interpretabilidade**: sabemos exatamente quais características o modelo usa para decidir (cor, textura, forma, defeitos)."
 
-> "Com **265 features**, alcançamos **X% de acurácia**, o que é competitivo para um sistema sem deep learning."
+> "Com **271 features**, alcançamos **X% de acurácia**, o que é competitivo para um sistema sem deep learning."
 
 **Limitações:**
 > "Algumas limitações:"
@@ -276,17 +331,16 @@
 
 **Trabalhos Futuros:**
 > "Possíveis melhorias:"
-> - "Adicionar segmentação de fundo para remover interferências"
-> - "Implementar detecção de manchas circulares (Hough Circles)"
+> - "Melhorar a segmentação de fundo para remover interferências"
 > - "Testar com dataset maior e mais diversificado"
 > - "Integrar com sistema de esteira rolante para inspeção em tempo real"
 
 #### Slide deve conter:
 - ✅ Sistema funcional com CV clássica
-- ✅ 265 features interpretáveis
+- ✅ 271 features interpretáveis
 - ✅ Acurácia de X%
 - ⚠️ Limitações: iluminação, fundo
-- 🔮 Futuros: segmentação, detecção de manchas, tempo real
+- 🔮 Futuros: segmentação, tempo real
 
 ---
 
@@ -294,7 +348,7 @@
 
 ### **P1: "Por que não usou Deep Learning?"**
 **R:** 
-> "O foco da matéria é visão computacional clássica. Deep Learning é tipo uma caixa-preta - você coloca imagem, sai resultado, mas não sabe exatamente o que aconteceu no meio. Aqui, cada uma das 265 features tem significado: histograma RGB captura cor, LBP captura textura, Canny captura bordas. Podemos **explicar** para um cliente por que o sistema decidiu que a fruta está podre."
+> "O foco da matéria é visão computacional clássica. Deep Learning é tipo uma caixa-preta - você coloca imagem, sai resultado, mas não sabe exatamente o que aconteceu no meio. Aqui, cada uma das 271 features tem significado: histograma RGB captura cor, LBP captura textura, Hough captura manchas circulares. Podemos **explicar** para um cliente por que o sistema decidiu que a fruta está podre."
 
 ---
 
@@ -342,7 +396,7 @@
 
 ### **P9: "Como você escolheu os 265 features?"**
 **R:**
-> "Baseado na **literatura de visão computacional**. Histogramas RGB/HSV são padrão para análise de cor. LBP e GLCM são algoritmos clássicos de textura, muito usados em análise de defeitos. Detecção de bordas (Canny) e gradientes (Sobel) são fundamentais para detectar irregularidades. Combinamos features complementares: cor captura mudanças químicas (fruta fica marrom), textura captura degradação física (rugas, manchas), forma captura defeitos estruturais (rachaduras)."
+> "Baseado na **literatura de visão computacional**. Histogramas RGB/HSV são padrão para análise de cor. LBP e GLCM são algoritmos clássicos de textura, muito usados em análise de defeitos. Detecção de bordas (Canny) e gradientes (Sobel) são fundamentais para detectar irregularidades. Adicionamos features específicas de defeitos como manchas circulares (Hough) e simetria, pois frutas podres tendem a perder a forma original."
 
 ---
 
@@ -417,7 +471,7 @@
 
 Se alguém perguntar "do que se trata seu projeto?", você deve conseguir responder em 30s:
 
-> "Desenvolvi um sistema de inspeção de frutas que usa visão computacional clássica para classificar frutas como frescas ou podres. O sistema extrai 265 características numéricas da imagem - cor, textura e forma - e usa machine learning tradicional (SVM) para fazer a classificação. O diferencial é que cada feature é interpretável: sabemos que frutas podres perdem saturação de cor, têm textura irregular e regiões escuras. Com apenas técnicas clássicas, sem deep learning, alcançamos [X]% de acurácia, o que é suficiente para automação industrial."
+> "Desenvolvi um sistema de inspeção de frutas que usa visão computacional clássica para classificar frutas como frescas ou podres. O sistema extrai 271 características numéricas da imagem - cor, textura, forma e defeitos - e usa machine learning tradicional (SVM) para fazer a classificação. O diferencial é que cada feature é interpretável: sabemos que frutas podres perdem saturação de cor, têm textura irregular e manchas circulares. Com apenas técnicas clássicas, sem deep learning, alcançamos [X]% de acurácia, o que é suficiente para automação industrial."
 
 ---
 

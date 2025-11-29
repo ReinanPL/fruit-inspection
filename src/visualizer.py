@@ -38,6 +38,22 @@ class ResultVisualizer:
     def __init__(self, classifier):
         self.classifier = classifier
     
+    def plot_confusion_matrix(self, y_test, y_pred):
+        cm = confusion_matrix(y_test, y_pred)
+        class_names = self.classifier.label_encoder.classes_
+
+        # Matriz normalizada
+        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm_normalized, annot=True, fmt='.2%', cmap='RdYlGn',
+                   xticklabels=class_names,
+                   yticklabels=class_names)
+        plt.title(f'Matriz de Confusão Normalizada - {self.classifier.model_name}')
+        plt.ylabel('Real')
+        plt.xlabel('Predito')
+        plt.show()
+    
 
     
     def plot_classification_metrics(self, report):

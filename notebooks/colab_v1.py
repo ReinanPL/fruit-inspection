@@ -68,9 +68,10 @@ class ImagePreprocessor:
             mask = np.zeros_like(mask)
             cv2.drawContours(mask, [largest_contour], -1, 255, -1)
         
-        # Aplicar máscara
+        # Aplicar máscara (Fundo Branco)
         mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB) // 255
-        img_segmented = image * mask_3ch
+        # Onde é fundo (0), vira branco (255). Onde é fruta (1), mantém original.
+        img_segmented = image * mask_3ch + (255 * (1 - mask_3ch)).astype(np.uint8)
         
         return img_segmented
 
@@ -311,7 +312,7 @@ class FeatureExtractor:
         edges = cv2.Canny(gray, 50, 150)
 
         # Regiões escuras
-        _, dark = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
+        _, dark = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY)
 
         # Threshold adaptativo
         adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -347,7 +348,10 @@ class FeatureExtractor:
         axes[1, 2].axis('off')
 
         # Linha 3: Defeitos
-        axes[2, 0].imshow(dark, cmap='hot')
+        # Combinar regiões escuras com bordas para dar contexto
+        dark_with_edges = dark.copy()
+        dark_with_edges[edges > 0] = 0 # Bordas pretas
+        axes[2, 0].imshow(dark_with_edges, cmap='gray')
         axes[2, 0].set_title('Regiões Escuras (Defeitos)', fontsize=12)
         axes[2, 0].axis('off')
 
@@ -492,7 +496,249 @@ class FruitClassifier:
 print("Módulos 1-3 carregados! Próximo: Visualização e Pipeline Completo")
 
 
-# MÓDULO 4: VISUALIZAÇÃO DE RESULTADOS
+# MÓDULO 4: SISTEMA DE INSPEÇÃO (PREDIÇÃO EM NOVAS IMAGENS)
+class FruitInspector:
+    def __init__(self, classifier, feature_extractor):
+        self.classifier = classifier
+        self.feature_extractor = feature_extractor
+
+    def predict_image(self, image_path, show_details=True):
+        img = cv2.imread(str(image_path))
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        features = self.feature_extractor.extract_all_features(img_rgb)
+        features_scaled = self.classifier.scaler.transform([features])
+
+        pred_encoded = self.classifier.model.predict(features_scaled)[0]
+        pred_proba = self.classifier.model.predict_proba(features_scaled)[0]
+
+        predicted_class = self.classifier.label_encoder.inverse_transform([pred_encoded])[0]
+        confidence = np.max(pred_proba)
+
+        is_rotten = 'rotten' in predicted_class.lower() or 'podre' in predicted_class.lower()
+
+        result = {
+            'class': predicted_class,
+            'confidence': confidence,
+            'is_rotten': is_rotten,
+            'all_probabilities': pred_proba,
+            'class_names': self.classifier.label_encoder.classes_
+        }
+
+        if show_details:
+            self._visualize_prediction(img_rgb, result, image_path)
+
+        return result
+
+    def _visualize_prediction(self, img, result, image_path):
+        # Pré-processamento
+        img_resized = cv2.resize(img, self.feature_extractor.img_size)
+        img_preprocessed = self.feature_extractor.preprocessor.preprocess(img.copy())
+        img_for_features = img_preprocessed
+        
+        # Features de Cor
+        hsv = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2HSV)
+        h_channel, s_channel, v_channel = cv2.split(hsv)
+
+        # Criar máscara para ignorar o fundo branco (255)
+        gray_for_mask = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2GRAY)
+        _, mask = cv2.threshold(gray_for_mask, 254, 255, cv2.THRESH_BINARY_INV)
+
+        # Features de Textura
+        gray = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2GRAY)
+        radius = 1
+        n_points = 8 * radius
+        lbp = local_binary_pattern(gray, n_points, radius, method="uniform")
+
+        # Features de Forma
+        edges = cv2.Canny(gray, 50, 150)
+        
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(sobelx**2 + sobely**2)
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        _, dark_regions = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY)
+        adaptive_thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                cv2.THRESH_BINARY, 11, 2)
+
+        # Visualização
+        status = "FRUTA FRESCA" if not result['is_rotten'] else "FRUTA PODRE"
+        status_color = 'green' if not result['is_rotten'] else 'red'
+
+        fig = plt.figure(figsize=(16, 14))
+        # Layout: 4 linhas x 4 colunas (Histogramas removidos)
+        gs = gridspec.GridSpec(4, 4, figure=fig, height_ratios=[1, 1, 1, 1],
+                               width_ratios=[1, 1, 1, 1.5],
+                               wspace=0.2, hspace=0.4)
+
+        # --- LINHA 1: VISÃO GERAL & RESULTADOS ---
+        # Original
+        ax_orig = fig.add_subplot(gs[0, 0])
+        ax_orig.imshow(img_resized)
+        ax_orig.set_title(f"Original\n{os.path.basename(image_path)}", fontsize=11, fontweight='bold')
+        ax_orig.axis('off')
+
+        # Pré-processada
+        ax_pre = fig.add_subplot(gs[0, 1])
+        if img_preprocessed is not None:
+            ax_pre.imshow(img_preprocessed)
+            ax_pre.set_title("Pré-processada\n(Fundo Branco)", fontsize=11)
+        ax_pre.axis('off')
+
+        # Texto Resultado
+        ax_res_text = fig.add_subplot(gs[0, 2])
+        ax_res_text.axis('off')
+        result_text = f"{status}\n\nClasse: {result['class']}\nConfiança: {result['confidence']*100:.1f}%"
+        ax_res_text.text(0.5, 0.5, result_text, ha='center', va='center', 
+                        fontweight='bold', color=status_color, fontsize=14)
+
+        # Gráfico de Probabilidades
+        ax_probs = fig.add_subplot(gs[0, 3])
+        top_5_idx = np.argsort(result['all_probabilities'])[-5:][::-1]
+        top_5_classes = [result['class_names'][i] for i in top_5_idx]
+        top_5_probs = result['all_probabilities'][top_5_idx]
+        colors = ['red' if result['class_names'][i] == result['class'] else 'lightgray' for i in top_5_idx]
+        
+        y_pos = np.arange(len(top_5_classes))
+        bars = ax_probs.barh(y_pos, top_5_probs, color=colors, alpha=0.8)
+        ax_probs.set_yticks(y_pos)
+        ax_probs.set_yticklabels(top_5_classes)
+        ax_probs.set_title('Top Predições', fontsize=11)
+        ax_probs.set_xlim([0, 1])
+        for i, (bar, prob) in enumerate(zip(bars, top_5_probs)):
+            ax_probs.text(prob + 0.02, bar.get_y() + bar.get_height()/2, f'{prob*100:.1f}%', va='center')
+
+        # --- LINHA 2: MÓDULO 1 - COR ---
+        # H Channel
+        ax_h = fig.add_subplot(gs[1, 0])
+        h_normalized = h_channel / 180.0
+        h_rgba = plt.cm.hsv(h_normalized)
+        mask_norm = mask / 255.0
+        mask_norm = mask_norm[:, :, np.newaxis]
+        h_final = h_rgba * mask_norm + (1 - mask_norm)
+        ax_h.imshow(h_final)
+        ax_h.set_title('Canal H (Matiz)', fontsize=10)
+        ax_h.axis('off')
+
+        # S Channel
+        ax_s = fig.add_subplot(gs[1, 1])
+        ax_s.imshow(s_channel, cmap='gray_r')
+        ax_s.set_title('Canal S (Saturação)', fontsize=10)
+        ax_s.axis('off')
+
+        # V Channel
+        ax_v = fig.add_subplot(gs[1, 2])
+        ax_v.imshow(v_channel, cmap='gray')
+        ax_v.set_title('Canal V (Brilho)', fontsize=10)
+        ax_v.axis('off')
+        
+        # Info Cor
+        ax_cor_info = fig.add_subplot(gs[1, 3])
+        ax_cor_info.axis('off')
+        cor_text = "MÓDULO 1: COR\n\n- Matiz (H): Cor predominante\n- Saturação (S): Intensidade\n- Brilho (V): Luminosidade"
+        ax_cor_info.text(0.5, 0.5, cor_text, ha='center', va='center', fontsize=10, color='#444')
+
+        # --- LINHA 3: MÓDULO 2 - TEXTURA ---
+        # Grayscale
+        ax_gray = fig.add_subplot(gs[2, 0])
+        ax_gray.imshow(gray, cmap='gray')
+        ax_gray.set_title('Escala de Cinza', fontsize=10)
+        ax_gray.axis('off')
+
+        # LBP
+        ax_lbp = fig.add_subplot(gs[2, 1])
+        ax_lbp.imshow(lbp, cmap='gray')
+        ax_lbp.set_title('LBP (Textura)', fontsize=10)
+        ax_lbp.axis('off')
+
+        # Textura Info
+        ax_tex_info = fig.add_subplot(gs[2, 2:])
+        ax_tex_info.axis('off')
+        tex_text = "MÓDULO 2: TEXTURA\n\n- LBP: Padrões Locais\n- GLCM: Contraste/Energia"
+        ax_tex_info.text(0.5, 0.5, tex_text, ha='center', va='center', fontsize=10, color='#444')
+
+        # --- LINHA 4: MÓDULO 3 (FORMA) & 4 (DEFEITOS) ---
+        # Bordas
+        ax_edges = fig.add_subplot(gs[3, 0])
+        ax_edges.imshow(255 - edges, cmap='gray')
+        ax_edges.set_title('Bordas', fontsize=10)
+        ax_edges.axis('off')
+
+        # Gradiente
+        ax_grad = fig.add_subplot(gs[3, 1])
+        ax_grad.imshow(gradient_magnitude, cmap='gray_r')
+        ax_grad.set_title('Gradiente', fontsize=10)
+        ax_grad.axis('off')
+
+        # Regiões Escuras
+        ax_dark = fig.add_subplot(gs[3, 2])
+        dark_with_edges = dark_regions.copy()
+        dark_with_edges[edges > 0] = 0 
+        ax_dark.imshow(dark_with_edges, cmap='gray')
+        ax_dark.set_title('Regiões Escuras', fontsize=10)
+        ax_dark.axis('off')
+
+        # Threshold Adaptativo
+        ax_adapt = fig.add_subplot(gs[3, 3])
+        ax_adapt.imshow(adaptive_thresh, cmap='gray')
+        ax_adapt.set_title('Threshold Adaptativo', fontsize=10)
+        ax_adapt.axis('off')
+
+        # Títulos das Seções
+        plt.figtext(0.1, 0.72, "MÓDULO 1: COR", fontsize=12, fontweight='bold', color='darkblue')
+        plt.figtext(0.1, 0.52, "MÓDULO 2: TEXTURA", fontsize=12, fontweight='bold', color='darkblue')
+        plt.figtext(0.1, 0.32, "MÓDULOS 3 & 4: FORMA E DEFEITOS", fontsize=12, fontweight='bold', color='darkblue')
+
+        fig.suptitle('Inspeção de Qualidade - Análise por Módulos', fontsize=16, fontweight='bold')
+        plt.show()
+
+    def batch_inspect(self, image_paths, threshold=0.7):
+        print(f"Inspecionando {len(image_paths)} frutas...")
+
+        results = []
+        for img_path in tqdm(image_paths, desc="Processando"):
+            result = self.predict_image(img_path, show_details=False)
+            results.append(result)
+
+        total = len(results)
+        rotten = sum([1 for r in results if r['is_rotten']])
+        fresh = total - rotten
+        low_confidence = sum([1 for r in results if r['confidence'] < threshold])
+
+        print("\nRELATÓRIO DO LOTE")
+        print(f"Frescas: {fresh} ({fresh/total*100:.1f}%)")
+        print(f"Podres: {rotten} ({rotten/total*100:.1f}%)")
+        print(f"Baixa Confiança: {low_confidence}")
+        print(f"Confiança Média: {np.mean([r['confidence'] for r in results])*100:.2f}%")
+
+        self._plot_batch_summary(results)
+        return results
+
+    def _plot_batch_summary(self, results):
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        labels = ['Frescas', 'Podres']
+        sizes = [
+            sum([1 for r in results if not r['is_rotten']]),
+            sum([1 for r in results if r['is_rotten']])
+        ]
+        colors = ['green', 'red']
+        
+        axes[0].pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%')
+        axes[0].set_title('Distribuição de Qualidade')
+
+        confidences = [r['confidence'] for r in results]
+        axes[1].hist(confidences, bins=20, color='steelblue', alpha=0.7)
+        axes[1].set_xlabel('Confiança')
+        axes[1].set_ylabel('Frequência')
+        axes[1].set_title('Distribuição de Confiança')
+        
+        plt.tight_layout()
+        plt.show()
+
+
+# MÓDULO 5: VISUALIZAÇÃO DE RESULTADOS
 class ResultVisualizer:
     def __init__(self, classifier):
         self.classifier = classifier
@@ -552,274 +798,6 @@ class ResultVisualizer:
         plt.show()
 
 
-
-# MÓDULO 5: SISTEMA DE INSPEÇÃO (PREDIÇÃO EM NOVAS IMAGENS)
-class FruitInspector:
-    def __init__(self, classifier, feature_extractor):
-        self.classifier = classifier
-        self.feature_extractor = feature_extractor
-
-    def predict_image(self, image_path, show_details=True):
-        img = cv2.imread(str(image_path))
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        features = self.feature_extractor.extract_all_features(img_rgb)
-        features_scaled = self.classifier.scaler.transform([features])
-
-        pred_encoded = self.classifier.model.predict(features_scaled)[0]
-        pred_proba = self.classifier.model.predict_proba(features_scaled)[0]
-
-        predicted_class = self.classifier.label_encoder.inverse_transform([pred_encoded])[0]
-        confidence = np.max(pred_proba)
-
-        is_rotten = 'rotten' in predicted_class.lower() or 'podre' in predicted_class.lower()
-
-        result = {
-            'class': predicted_class,
-            'confidence': confidence,
-            'is_rotten': is_rotten,
-            'all_probabilities': pred_proba,
-            'class_names': self.classifier.label_encoder.classes_
-        }
-
-        if show_details:
-            self._visualize_prediction(img_rgb, result, image_path)
-
-        return result
-
-    def _visualize_prediction(self, img, result, image_path):
-        # Pré-processamento
-        img_resized = cv2.resize(img, self.feature_extractor.img_size)
-        img_preprocessed = self.feature_extractor.preprocessor.preprocess(img.copy())
-        img_for_features = img_preprocessed
-        
-        # Features de Cor
-        hsv = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2HSV)
-        h_channel, s_channel, v_channel = cv2.split(hsv)
-
-        hist_r = cv2.calcHist([img_for_features], [0], None, [256], [0, 256]).flatten()
-        hist_g = cv2.calcHist([img_for_features], [1], None, [256], [0, 256]).flatten()
-        hist_b = cv2.calcHist([img_for_features], [2], None, [256], [0, 256]).flatten()
-
-        hist_h = cv2.calcHist([hsv], [0], None, [180], [0, 180]).flatten()
-        hist_s = cv2.calcHist([hsv], [1], None, [256], [0, 256]).flatten()
-        hist_v = cv2.calcHist([hsv], [2], None, [256], [0, 256]).flatten()
-
-        # Features de Textura
-        gray = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2GRAY)
-        radius = 1
-        n_points = 8 * radius
-        lbp = local_binary_pattern(gray, n_points, radius, method="uniform")
-        lbp_hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2))
-        lbp_hist = lbp_hist.astype("float")
-        lbp_hist /= (lbp_hist.sum() + 1e-6)
-
-        # Features de Forma
-        edges = cv2.Canny(gray, 50, 150)
-        
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-        gradient_magnitude = np.sqrt(sobelx**2 + sobely**2)
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-
-        _, dark_regions = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
-        adaptive_thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                                cv2.THRESH_BINARY, 11, 2)
-
-        # Visualização
-        status = "FRUTA FRESCA" if not result['is_rotten'] else "FRUTA PODRE"
-        status_color = 'green' if not result['is_rotten'] else 'red'
-
-        fig = plt.figure(figsize=(18, 12))
-        gs = gridspec.GridSpec(4, 5, figure=fig, height_ratios=[1, 1, 1, 1.2],
-                               width_ratios=[1, 1, 1, 1, 1.5],
-                               wspace=0.1, hspace=0.3)
-
-        # Original
-        ax_orig_title = fig.add_subplot(gs[0, 0])
-        ax_orig_title.axis('off')
-        ax_orig_title.text(0.5, 0.9, f"Original: {os.path.basename(image_path)}",
-                           fontsize=12, ha='center', va='top', fontweight='bold')
-        ax_orig_title.imshow(img_resized)
-        if img_preprocessed is not None:
-            ax_orig_title.text(0.5, 0.05, "Pré-processada", ha='center', va='bottom')
-
-        # Linha 1: Canais
-        ax1 = fig.add_subplot(gs[0, 1])
-        ax1.imshow(h_channel, cmap='hsv')
-        ax1.set_title('Canal H (Matiz)')
-        ax1.axis('off')
-        
-        ax2 = fig.add_subplot(gs[0, 2])
-        ax2.imshow(s_channel, cmap='gray')
-        ax2.set_title('Canal S (Saturação)')
-        ax2.axis('off')
-        
-        ax3 = fig.add_subplot(gs[0, 3])
-        ax3.imshow(v_channel, cmap='gray')
-        ax3.set_title('Canal V (Brilho)')
-        ax3.axis('off')
-        
-        ax4 = fig.add_subplot(gs[0, 4])
-        ax4.plot(hist_r, color='red', alpha=0.7, label='R')
-        ax4.plot(hist_g, color='green', alpha=0.7, label='G')
-        ax4.plot(hist_b, color='blue', alpha=0.7, label='B')
-        ax4.set_title('Histograma RGB')
-        ax4.set_xlim([0, 256])
-        ax4.legend(fontsize=8)
-        
-        # Linha 2: Textura
-        ax5 = fig.add_subplot(gs[1, 0])
-        if img_preprocessed is not None:
-            ax5.imshow(img_preprocessed)
-            ax5.set_title('Sem Fundo')
-        else:
-            ax5.text(0.5, 0.5, "N/A", ha='center', va='center')
-        ax5.axis('off')
-
-        ax5_gray = fig.add_subplot(gs[1, 1])
-        ax5_gray.imshow(gray, cmap='gray')
-        ax5_gray.set_title('Escala de Cinza')
-        ax5_gray.axis('off')
-        
-        ax6 = fig.add_subplot(gs[1, 2])
-        ax6.imshow(lbp, cmap='gray')
-        ax6.set_title('LBP (Textura)')
-        ax6.axis('off')
-        
-        ax7 = fig.add_subplot(gs[1, 3])
-        ax7.imshow(gradient_magnitude, cmap='hot')
-        ax7.set_title('Gradiente')
-        ax7.axis('off')
-        
-        ax8 = fig.add_subplot(gs[1, 4])
-        ax8.plot(hist_h, color='purple', alpha=0.7, label='H')
-        ax8.plot(hist_s, color='orange', alpha=0.7, label='S')
-        ax8.plot(hist_v, color='gray', alpha=0.7, label='V')
-        ax8.set_title('Histograma HSV')
-        ax8.legend(fontsize=8)
-        
-        # Linha 3: Defeitos
-        ax9 = fig.add_subplot(gs[2, 0])
-        ax9.imshow(edges, cmap='gray')
-        ax9.set_title('Bordas')
-        ax9.axis('off')
-        
-        ax10 = fig.add_subplot(gs[2, 1])
-        ax10.imshow(dark_regions, cmap='hot')
-        ax10.set_title('Regiões Escuras')
-        ax10.axis('off')
-        
-        ax11 = fig.add_subplot(gs[2, 2])
-        ax11.imshow(adaptive_thresh, cmap='gray')
-        ax11.set_title('Threshold Adaptativo')
-        ax11.axis('off')
-        
-        ax12 = fig.add_subplot(gs[2, 3])
-        ax12.bar(range(len(lbp_hist)), lbp_hist, color='steelblue', alpha=0.7)
-        ax12.set_title('Histograma LBP')
-        
-        # Texto Features
-        ax13 = fig.add_subplot(gs[2, 4])
-        ax13.axis('off')
-        feature_text = f"""
-FEATURES:
----------
-COR: 204
-TEXTURA: 54
-FORMA: 7
-DEFEITOS: 6
----------
-TOTAL: 271 features
-        """
-        ax13.text(0.05, 0.95, feature_text, transform=ax13.transAxes,
-                 fontfamily='monospace', verticalalignment='top')
-        
-        # Linha 4: Resultado
-        ax14 = fig.add_subplot(gs[3, :4])
-        top_5_idx = np.argsort(result['all_probabilities'])[-5:][::-1]
-        top_5_classes = [result['class_names'][i] for i in top_5_idx]
-        top_5_probs = result['all_probabilities'][top_5_idx]
-        
-        colors = ['red' if result['class_names'][i] == result['class'] else 'lightgray'
-                 for i in top_5_idx]
-        
-        y_pos = np.arange(len(top_5_classes))
-        bars = ax14.barh(y_pos, top_5_probs, color=colors, alpha=0.8)
-        ax14.set_yticks(y_pos)
-        ax14.set_yticklabels(top_5_classes)
-        ax14.set_xlabel('Probabilidade')
-        ax14.set_title('Top Predições')
-        ax14.set_xlim([0, 1])
-        
-        for i, (bar, prob) in enumerate(zip(bars, top_5_probs)):
-            ax14.text(prob + 0.02, bar.get_y() + bar.get_height()/2,
-                     f'{prob*100:.1f}%', va='center')
-        
-        ax15 = fig.add_subplot(gs[3, 4])
-        ax15.axis('off')
-        result_text = f"""
-{status}
-
-Classe:
-{result['class']}
-
-Confiança:
-{result['confidence']*100:.2f}%
-        """
-        ax15.text(0.5, 0.5, result_text, transform=ax15.transAxes,
-                 ha='center', va='center', fontweight='bold',
-                 color=status_color)
-        
-        fig.suptitle('Inspeção de Qualidade', fontsize=16, fontweight='bold')
-        plt.tight_layout()
-        plt.show()
-
-    def batch_inspect(self, image_paths, threshold=0.7):
-        print(f"Inspecionando {len(image_paths)} frutas...")
-
-        results = []
-        for img_path in tqdm(image_paths, desc="Processando"):
-            result = self.predict_image(img_path, show_details=False)
-            results.append(result)
-
-        total = len(results)
-        rotten = sum([1 for r in results if r['is_rotten']])
-        fresh = total - rotten
-        low_confidence = sum([1 for r in results if r['confidence'] < threshold])
-
-        print("\nRELATÓRIO DO LOTE")
-        print(f"Frescas: {fresh} ({fresh/total*100:.1f}%)")
-        print(f"Podres: {rotten} ({rotten/total*100:.1f}%)")
-        print(f"Baixa Confiança: {low_confidence}")
-        print(f"Confiança Média: {np.mean([r['confidence'] for r in results])*100:.2f}%")
-
-        self._plot_batch_summary(results)
-        return results
-
-    def _plot_batch_summary(self, results):
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-        labels = ['Frescas', 'Podres']
-        sizes = [
-            sum([1 for r in results if not r['is_rotten']]),
-            sum([1 for r in results if r['is_rotten']])
-        ]
-        colors = ['green', 'red']
-        
-        axes[0].pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%')
-        axes[0].set_title('Distribuição de Qualidade')
-
-        confidences = [r['confidence'] for r in results]
-        axes[1].hist(confidences, bins=20, color='steelblue', alpha=0.7)
-        axes[1].set_xlabel('Confiança')
-        axes[1].set_ylabel('Frequência')
-        axes[1].set_title('Distribuição de Confiança')
-        
-        plt.tight_layout()
-        plt.show()
-
-
 # MÓDULO 6: PIPELINE COMPLETO
 class SimpleFruitInspectionPipeline:
     
@@ -846,16 +824,15 @@ class SimpleFruitInspectionPipeline:
         classifier_svm.train_svm(X_train, y_train)
         y_pred, y_pred_proba, accuracy, report = classifier_svm.evaluate(X_test, y_test)
 
-        # 3. Visualizar
-        visualizer_svm = ResultVisualizer(classifier_svm)
-        # visualizer_svm.plot_confusion_matrix(y_test, y_pred)
-        visualizer_svm.plot_classification_metrics(report)
-
         self.classifier = classifier_svm
-        self.visualizer = visualizer_svm
 
-        # 4. Sistema de Inspeção
+        # 3. Sistema de Inspeção
         self.inspector = FruitInspector(self.classifier, self.feature_extractor)
+
+        # 4. Visualizar Resultados
+        visualizer_svm = ResultVisualizer(classifier_svm)
+        visualizer_svm.plot_classification_metrics(report)
+        self.visualizer = visualizer_svm
 
         print("\nSistema pronto!")
         print("Use: inspector.predict_image('imagem.jpg')")

@@ -18,10 +18,11 @@ Sistema completo de inspeção automatizada de qualidade de frutas usando Visão
 Este projeto implementa um sistema completo de inspeção de qualidade de frutas seguindo uma abordagem em duas fases:
 
 ### Fase 1: Processamento de Imagem (Visão Computacional Clássica)
-- Extração de 265 features por imagem
+- Extração de 271 features por imagem
 - **Features de Cor** (204): Histogramas RGB e HSV, estatísticas de cor
 - **Features de Textura** (54): LBP (Local Binary Pattern), GLCM (Gray Level Co-occurrence Matrix)
-- **Features de Forma** (7): Detecção de bordas, defeitos, gradientes
+- **Features de Forma** (7): Detecção de bordas, gradientes
+- **Features de Defeitos** (6): Manchas, simetria, regiões escuras
 
 ### Fase 2: Classificação (Machine Learning)
 - **SVM** (Support Vector Machine): Kernel RBF com parâmetros otimizados
@@ -37,9 +38,9 @@ Este projeto implementa um sistema completo de inspeção de qualidade de frutas
 └─────────────────┘     └──────────────────┘     └─────────────────┘
                               │                           │
                               ▼                           ▼
-                        265 features              Fresca / Podre
+                        271 features              Fresca / Podre
                         (cor, textura,            (com confiança)
-                         forma)
+                         forma, defeitos)
 ```
 
 ## 📦 Instalação
@@ -169,13 +170,15 @@ fruit-inspection/
 
 - `extract_color_features()`: Histogramas RGB/HSV + estatísticas
 - `extract_texture_features()`: LBP + GLCM + estatísticas
-- `extract_shape_features()`: Bordas, defeitos, gradientes
+- `extract_shape_features()`: Bordas, gradientes
+- `extract_defect_features()`: Manchas, simetria, regiões escuras
 - `visualize_features()`: Visualiza extração de features
 
-**Features extraídas: 265 total**
+**Features extraídas: 271 total**
 - 204 features de cor
 - 54 features de textura
 - 7 features de forma
+- 6 features de defeitos
 
 ### 2. `dataset_loader.py`
 **Carregamento e Preparação de Dados**

@@ -13,9 +13,11 @@ Funcionalidades:
 - Relatórios de inspeção
 """
 
+import os
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 from tqdm import tqdm
 
 
@@ -101,86 +103,190 @@ class FruitInspector:
         return result
     
     def _visualize_prediction(self, img, result, image_path):
-        """
-        Visualiza resultado da predição.
+        # Pré-processamento
+        img_resized = cv2.resize(img, self.feature_extractor.img_size)
+        img_preprocessed = self.feature_extractor.preprocessor.preprocess(img.copy())
+        img_for_features = img_preprocessed
         
-        Mostra:
-        - Imagem original
-        - Detecção de bordas
-        - Detecção de defeitos
-        - Top 5 predições com probabilidades
-        """
-        # Redimensionar para visualização
-        img_display = cv2.resize(img, (300, 300))
+        # Features de Cor
+        hsv = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2HSV)
+        h_channel, s_channel, v_channel = cv2.split(hsv)
+
+        hist_r = cv2.calcHist([img_for_features], [0], None, [256], [0, 256]).flatten()
+        hist_g = cv2.calcHist([img_for_features], [1], None, [256], [0, 256]).flatten()
+        hist_b = cv2.calcHist([img_for_features], [2], None, [256], [0, 256]).flatten()
+
+        hist_h = cv2.calcHist([hsv], [0], None, [180], [0, 180]).flatten()
+        hist_s = cv2.calcHist([hsv], [1], None, [256], [0, 256]).flatten()
+        hist_v = cv2.calcHist([hsv], [2], None, [256], [0, 256]).flatten()
+
+        # Features de Textura
+        gray = cv2.cvtColor(img_for_features, cv2.COLOR_RGB2GRAY)
+        radius = 1
+        n_points = 8 * radius
+        lbp = local_binary_pattern(gray, n_points, radius, method="uniform")
+        lbp_hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_points + 3), range=(0, n_points + 2))
+        lbp_hist = lbp_hist.astype("float")
+        lbp_hist /= (lbp_hist.sum() + 1e-6)
+
+        # Features de Forma
+        edges = cv2.Canny(gray, 50, 150)
         
-        # Criar visualização das features
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        gray_resized = cv2.resize(gray, (256, 256))
-        
-        edges = cv2.Canny(gray_resized, 50, 150)
-        _, dark = cv2.threshold(gray_resized, 60, 255, cv2.THRESH_BINARY_INV)
-        
-        fig = plt.figure(figsize=(16, 5))
-        
-        # Grid layout
-        gs = fig.add_gridspec(2, 4, hspace=0.3, wspace=0.3)
-        
-        # Imagem original
-        ax1 = fig.add_subplot(gs[:, 0])
-        ax1.imshow(img_display)
-        ax1.set_title('Imagem Original', fontsize=12)
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(sobelx**2 + sobely**2)
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        _, dark_regions = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+        adaptive_thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                cv2.THRESH_BINARY, 11, 2)
+
+        # Visualização
+        status = "FRUTA FRESCA" if not result['is_rotten'] else "FRUTA PODRE"
+        status_color = 'green' if not result['is_rotten'] else 'red'
+
+        fig = plt.figure(figsize=(18, 12))
+        gs = gridspec.GridSpec(4, 5, figure=fig, height_ratios=[1, 1, 1, 1.2],
+                               width_ratios=[1, 1, 1, 1, 1.5],
+                               wspace=0.1, hspace=0.3)
+
+        # Original
+        ax_orig_title = fig.add_subplot(gs[0, 0])
+        ax_orig_title.axis('off')
+        ax_orig_title.text(0.5, 0.9, f"Original: {os.path.basename(image_path)}",
+                           fontsize=12, ha='center', va='top', fontweight='bold')
+        ax_orig_title.imshow(img_resized)
+        if img_preprocessed is not None:
+            ax_orig_title.text(0.5, 0.05, "Pré-processada", ha='center', va='bottom')
+
+        # Linha 1: Canais
+        ax1 = fig.add_subplot(gs[0, 1])
+        ax1.imshow(h_channel, cmap='hsv')
+        ax1.set_title('Canal H (Matiz)')
         ax1.axis('off')
         
-        # Detecção de bordas
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax2.imshow(edges, cmap='gray')
-        ax2.set_title('Bordas (Canny)', fontsize=10)
+        ax2 = fig.add_subplot(gs[0, 2])
+        ax2.imshow(s_channel, cmap='gray')
+        ax2.set_title('Canal S (Saturação)')
         ax2.axis('off')
         
-        # Imagem Pré-processada (Fundo Removido)
+        ax3 = fig.add_subplot(gs[0, 3])
+        ax3.imshow(v_channel, cmap='gray')
+        ax3.set_title('Canal V (Brilho)')
+        ax3.axis('off')
+        
+        ax4 = fig.add_subplot(gs[0, 4])
+        ax4.plot(hist_r, color='red', alpha=0.7, label='R')
+        ax4.plot(hist_g, color='green', alpha=0.7, label='G')
+        ax4.plot(hist_b, color='blue', alpha=0.7, label='B')
+        ax4.set_title('Histograma RGB')
+        ax4.set_xlim([0, 256])
+        ax4.legend(fontsize=8)
+        
+        # Linha 2: Textura
         ax5 = fig.add_subplot(gs[1, 0])
-        try:
-            img_preprocessed = self.feature_extractor.preprocessor.preprocess(img)
+        if img_preprocessed is not None:
             ax5.imshow(img_preprocessed)
-            ax5.set_title('Pré-processada (Sem Fundo)', fontsize=10)
-        except Exception:
+            ax5.set_title('Sem Fundo')
+        else:
             ax5.text(0.5, 0.5, "N/A", ha='center', va='center')
-            ax5.set_title('Pré-processada', fontsize=10)
         ax5.axis('off')
 
-        # Escala de cinza
         ax5_gray = fig.add_subplot(gs[1, 1])
         ax5_gray.imshow(gray, cmap='gray')
-        ax5_gray.set_title('Escala de Cinza', fontsize=10)
+        ax5_gray.set_title('Escala de Cinza')
         ax5_gray.axis('off')
         
-        # Top 5 probabilidades
-        ax4 = fig.add_subplot(gs[:, 2:])
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.imshow(lbp, cmap='gray')
+        ax6.set_title('LBP (Textura)')
+        ax6.axis('off')
+        
+        ax7 = fig.add_subplot(gs[1, 3])
+        ax7.imshow(gradient_magnitude, cmap='hot')
+        ax7.set_title('Gradiente')
+        ax7.axis('off')
+        
+        ax8 = fig.add_subplot(gs[1, 4])
+        ax8.plot(hist_h, color='purple', alpha=0.7, label='H')
+        ax8.plot(hist_s, color='orange', alpha=0.7, label='S')
+        ax8.plot(hist_v, color='gray', alpha=0.7, label='V')
+        ax8.set_title('Histograma HSV')
+        ax8.legend(fontsize=8)
+        
+        # Linha 3: Defeitos
+        ax9 = fig.add_subplot(gs[2, 0])
+        ax9.imshow(edges, cmap='gray')
+        ax9.set_title('Bordas')
+        ax9.axis('off')
+        
+        ax10 = fig.add_subplot(gs[2, 1])
+        ax10.imshow(dark_regions, cmap='hot')
+        ax10.set_title('Regiões Escuras')
+        ax10.axis('off')
+        
+        ax11 = fig.add_subplot(gs[2, 2])
+        ax11.imshow(adaptive_thresh, cmap='gray')
+        ax11.set_title('Threshold Adaptativo')
+        ax11.axis('off')
+        
+        ax12 = fig.add_subplot(gs[2, 3])
+        ax12.bar(range(len(lbp_hist)), lbp_hist, color='steelblue', alpha=0.7)
+        ax12.set_title('Histograma LBP')
+        
+        # Texto Features
+        ax13 = fig.add_subplot(gs[2, 4])
+        ax13.axis('off')
+        feature_text = f"""
+FEATURES:
+---------
+COR: 204
+TEXTURA: 54
+FORMA: 7
+DEFEITOS: 6
+---------
+TOTAL: 271 features
+        """
+        ax13.text(0.05, 0.95, feature_text, transform=ax13.transAxes,
+                 fontfamily='monospace', verticalalignment='top')
+        
+        # Linha 4: Resultado
+        ax14 = fig.add_subplot(gs[3, :4])
         top_5_idx = np.argsort(result['all_probabilities'])[-5:][::-1]
         top_5_classes = [result['class_names'][i] for i in top_5_idx]
         top_5_probs = result['all_probabilities'][top_5_idx]
         
-        colors = ['red' if result['class_names'][i] == result['class'] else 'gray' 
+        colors = ['red' if result['class_names'][i] == result['class'] else 'lightgray'
                  for i in top_5_idx]
         
         y_pos = np.arange(len(top_5_classes))
-        ax4.barh(y_pos, top_5_probs, color=colors, alpha=0.7)
-        ax4.set_yticks(y_pos)
-        ax4.set_yticklabels(top_5_classes, fontsize=10)
-        ax4.set_xlabel('Probabilidade')
-        ax4.set_title('Top 5 Predições', fontsize=12)
-        ax4.set_xlim([0, 1])
-        ax4.grid(axis='x', alpha=0.3)
+        bars = ax14.barh(y_pos, top_5_probs, color=colors, alpha=0.8)
+        ax14.set_yticks(y_pos)
+        ax14.set_yticklabels(top_5_classes)
+        ax14.set_xlabel('Probabilidade')
+        ax14.set_title('Top Predições')
+        ax14.set_xlim([0, 1])
         
-        # Título com resultado
-        status = "⚠️ PODRE" if result['is_rotten'] else "✅ FRESCA"
-        color = 'red' if result['is_rotten'] else 'green'
+        for i, (bar, prob) in enumerate(zip(bars, top_5_probs)):
+            ax14.text(prob + 0.02, bar.get_y() + bar.get_height()/2,
+                     f'{prob*100:.1f}%', va='center')
         
-        fig.suptitle(f'Resultado: {status} - {result["class"]}\n'
-                    f'Confiança: {result["confidence"]*100:.2f}% | '
-                    f'Modelo: {self.classifier.model_name}',
-                    fontsize=14, color=color, weight='bold')
+        ax15 = fig.add_subplot(gs[3, 4])
+        ax15.axis('off')
+        result_text = f"""
+{status}
+
+Classe:
+{result['class']}
+
+Confiança:
+{result['confidence']*100:.2f}%
+        """
+        ax15.text(0.5, 0.5, result_text, transform=ax15.transAxes,
+                 ha='center', va='center', fontweight='bold',
+                 color=status_color)
         
+        fig.suptitle('Inspeção de Qualidade', fontsize=16, fontweight='bold')
         plt.tight_layout()
         plt.show()
     
